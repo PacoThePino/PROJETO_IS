@@ -1,0 +1,16 @@
+# Ignorar pastas do Visual Studio
+.vs/
+.vscode/
+
+# Ignorar pastas de compilação (lixo gerado ao compilar)
+bin/
+obj/
+
+# Ignorar ficheiros de utilizador específicos
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Ignorar pacotes (se usares NuGet, eles baixam sozinhos depois)
+packages/
