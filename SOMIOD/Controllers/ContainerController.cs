@@ -136,65 +136,91 @@ namespace SOMIOD.Controllers
             return Ok("Container apagado com sucesso.");
         }
 
+
         // =============================================================
-        // CRIAR DADO (POST): api/somiod/{appName}/{containerName}
+        // CRIAR RECURSO (POST): Pode ser Dado OU Subscrição
         // =============================================================
         [HttpPost]
         [Route("{containerName}")]
-        public IHttpActionResult CreateContentInstance(string appName, string containerName, [FromBody] ContentInstance data)
+        public IHttpActionResult CreateResource(string appName, string containerName, [FromBody] Newtonsoft.Json.Linq.JObject jsonBody)
         {
-            if (data == null || string.IsNullOrEmpty(data.Name) || string.IsNullOrEmpty(data.Content))
-                return BadRequest("Nome e Conteúdo são obrigatórios.");
+            // Lemos o JSON genérico para ver o tipo
+            string resType = (string)jsonBody["res-type"];
 
-            if (data.ResType != "content-instance")
-                return BadRequest("Tipo incorreto. Esperado: content-instance");
+            // 1. Descobrir o ID do Container Pai
+            string queryCheck = @"SELECT C.Id FROM Container C 
+                                  JOIN Application A ON C.ParentAppId = A.Id 
+                                  WHERE A.Name = @AppName AND C.Name = @ContainerName";
 
-            // 1. Verificar se Container (e App pai) existem e obter o ID do Container
-            string queryCheck = @"
-                SELECT C.Id 
-                FROM Container C
-                JOIN Application A ON C.ParentAppId = A.Id
-                WHERE A.Name = @AppName AND C.Name = @ContainerName";
-
-            List<SqlParameter> paramsCheck = new List<SqlParameter>
-            {
+            List<SqlParameter> paramsCheck = new List<SqlParameter> {
                 new SqlParameter("@AppName", appName),
                 new SqlParameter("@ContainerName", containerName)
             };
 
             var dt = SqlDataHelper.ExecuteQuery(queryCheck, paramsCheck);
-
-            if (dt.Rows.Count == 0) return NotFound(); // Container não encontrado
+            if (dt.Rows.Count == 0) return NotFound();
 
             int containerId = (int)dt.Rows[0]["Id"];
 
-            // 2. Criar o ContentInstance
+            // 2. Decisão: É Content-Instance ou Subscription?
+            if (resType == "content-instance")
+            {
+                ContentInstance data = jsonBody.ToObject<ContentInstance>();
+                return SaveContentInstance(data, containerId);
+            }
+            else if (resType == "subscription")
+            {
+                Subscription sub = jsonBody.ToObject<Subscription>();
+                return SaveSubscription(sub, containerId);
+            }
+
+            return BadRequest("res-type inválido.");
+        }
+
+        // Métodos auxiliares privados para organizar o código
+        private IHttpActionResult SaveContentInstance(ContentInstance data, int containerId)
+        {
+            if (string.IsNullOrEmpty(data.Name) || string.IsNullOrEmpty(data.Content)) return BadRequest("Nome e Content obrigatórios.");
+
             try
             {
-                data.CreationDate = DateTime.Now; // Definir data agora
-
-                string queryInsert = @"
-                    INSERT INTO ContentInstance (Name, CreationDate, Content, ContentType, ParentContainerId) 
-                    VALUES (@Name, @Date, @Content, @Type, @ParentId)";
-
-                List<SqlParameter> paramsInsert = new List<SqlParameter>
-                {
+                data.CreationDate = DateTime.Now;
+                string query = "INSERT INTO ContentInstance (Name, CreationDate, Content, ContentType, ParentContainerId) VALUES (@Name, @Date, @Content, @Type, @ParentId)";
+                // ... (Igual ao que tinhas antes, adiciona os parametros) ...
+                List<SqlParameter> paramsInsert = new List<SqlParameter> {
                     new SqlParameter("@Name", data.Name),
                     new SqlParameter("@Date", data.CreationDate),
                     new SqlParameter("@Content", data.Content),
-                    new SqlParameter("@Type", data.ContentType ?? "application/json"), // Default se vier vazio
+                    new SqlParameter("@Type", data.ContentType ?? "application/json"),
                     new SqlParameter("@ParentId", containerId)
                 };
-
-                SqlDataHelper.ExecuteNonQuery(queryInsert, paramsInsert);
-
+                SqlDataHelper.ExecuteNonQuery(query, paramsInsert);
                 return Ok(data);
             }
-            catch (SqlException ex)
-            {
-                if (ex.Number == 2627) return Conflict();
-                return InternalServerError(ex);
-            }
+            catch (SqlException ex) { if (ex.Number == 2627) return Conflict(); return InternalServerError(ex); }
         }
-    } 
+
+        private IHttpActionResult SaveSubscription(Subscription sub, int containerId)
+        {
+            if (string.IsNullOrEmpty(sub.Name) || string.IsNullOrEmpty(sub.Endpoint) || string.IsNullOrEmpty(sub.Event))
+                return BadRequest("Nome, Endpoint e Event são obrigatórios.");
+
+            try
+            {
+                sub.CreationDate = DateTime.Now;
+                string query = "INSERT INTO Subscription (Name, CreationDate, Endpoint, Event, ParentContainerId) VALUES (@Name, @Date, @Endpoint, @Event, @ParentId)";
+
+                List<SqlParameter> paramsInsert = new List<SqlParameter> {
+                    new SqlParameter("@Name", sub.Name),
+                    new SqlParameter("@Date", sub.CreationDate),
+                    new SqlParameter("@Endpoint", sub.Endpoint),
+                    new SqlParameter("@Event", sub.Event),
+                    new SqlParameter("@ParentId", containerId)
+                };
+                SqlDataHelper.ExecuteNonQuery(query, paramsInsert);
+                return Ok(sub);
+            }
+            catch (SqlException ex) { if (ex.Number == 2627) return Conflict(); return InternalServerError(ex); }
+        }
+    }
 }

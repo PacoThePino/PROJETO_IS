@@ -45,6 +45,9 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="M2Mqtt.Net, Version=4.3.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>packages\M2Mqtt.4.3.0.0\lib\net45\M2Mqtt.Net.dll</HintPath>
+    </Reference>
     <Reference Include="Microsoft.CSharp" />
     <Reference Include="System" />
     <Reference Include="System.Data" />
@@ -159,6 +162,7 @@
     <Compile Include="Controllers\ContentController.cs" />
     <Compile Include="Controllers\HomeController.cs" />
     <Compile Include="Controllers\ApplicationController.cs" />
+    <Compile Include="Controllers\SubscriptionController.cs" />
     <Compile Include="Controllers\ValuesController.cs" />
     <Compile Include="Global.asax.cs">
       <DependentUpon>Global.asax</DependentUpon>
@@ -167,6 +171,7 @@
     <Compile Include="Models\Application.cs" />
     <Compile Include="Models\Container.cs" />
     <Compile Include="Models\ContentInstance.cs" />
+    <Compile Include="Models\Subscription.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
@@ -241,6 +246,7 @@
     <Folder Include="Views\Content\" />
     <Folder Include="Views\CreateContainer\" />
     <Folder Include="Views\Somiod\" />
+    <Folder Include="Views\Subscription\" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="Scripts\bootstrap.min.js.map" />
