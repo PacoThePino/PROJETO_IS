@@ -135,5 +135,66 @@ namespace SOMIOD.Controllers
 
             return Ok("Container apagado com sucesso.");
         }
-    }
+
+        // =============================================================
+        // CRIAR DADO (POST): api/somiod/{appName}/{containerName}
+        // =============================================================
+        [HttpPost]
+        [Route("{containerName}")]
+        public IHttpActionResult CreateContentInstance(string appName, string containerName, [FromBody] ContentInstance data)
+        {
+            if (data == null || string.IsNullOrEmpty(data.Name) || string.IsNullOrEmpty(data.Content))
+                return BadRequest("Nome e Conteúdo são obrigatórios.");
+
+            if (data.ResType != "content-instance")
+                return BadRequest("Tipo incorreto. Esperado: content-instance");
+
+            // 1. Verificar se Container (e App pai) existem e obter o ID do Container
+            string queryCheck = @"
+                SELECT C.Id 
+                FROM Container C
+                JOIN Application A ON C.ParentAppId = A.Id
+                WHERE A.Name = @AppName AND C.Name = @ContainerName";
+
+            List<SqlParameter> paramsCheck = new List<SqlParameter>
+            {
+                new SqlParameter("@AppName", appName),
+                new SqlParameter("@ContainerName", containerName)
+            };
+
+            var dt = SqlDataHelper.ExecuteQuery(queryCheck, paramsCheck);
+
+            if (dt.Rows.Count == 0) return NotFound(); // Container não encontrado
+
+            int containerId = (int)dt.Rows[0]["Id"];
+
+            // 2. Criar o ContentInstance
+            try
+            {
+                data.CreationDate = DateTime.Now; // Definir data agora
+
+                string queryInsert = @"
+                    INSERT INTO ContentInstance (Name, CreationDate, Content, ContentType, ParentContainerId) 
+                    VALUES (@Name, @Date, @Content, @Type, @ParentId)";
+
+                List<SqlParameter> paramsInsert = new List<SqlParameter>
+                {
+                    new SqlParameter("@Name", data.Name),
+                    new SqlParameter("@Date", data.CreationDate),
+                    new SqlParameter("@Content", data.Content),
+                    new SqlParameter("@Type", data.ContentType ?? "application/json"), // Default se vier vazio
+                    new SqlParameter("@ParentId", containerId)
+                };
+
+                SqlDataHelper.ExecuteNonQuery(queryInsert, paramsInsert);
+
+                return Ok(data);
+            }
+            catch (SqlException ex)
+            {
+                if (ex.Number == 2627) return Conflict();
+                return InternalServerError(ex);
+            }
+        }
+    } 
 }
