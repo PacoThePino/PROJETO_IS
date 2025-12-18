@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Data.SqlClient;
 using System.Web.Http;
+using System.Web.Http.Results;
 
 namespace SOMIOD.Controllers
 {
@@ -56,6 +57,13 @@ namespace SOMIOD.Controllers
         [Route("{recordName}")]
         public IHttpActionResult DeleteRecord(string appName, string containerName, string recordName)
         {
+
+            var checkResult = GetRecord(appName, containerName, recordName);
+            if (!(checkResult is System.Web.Http.Results.OkNegotiatedContentResult<ContentInstance> okResult))
+                return NotFound();
+
+            ContentInstance dataToDelete = okResult.Content;
+
             string query = @"
                 DELETE CI 
                 FROM ContentInstance CI
@@ -70,11 +78,21 @@ namespace SOMIOD.Controllers
                 new SqlParameter("@RecordName", recordName)
             };
 
+
             int rows = SqlDataHelper.ExecuteNonQuery(query, param);
 
-            if (rows == 0) return NotFound();
+            if (rows > 0)
+            {
+                // =============================================================
+                // << GATILHO DE ELIMINAÇÃO >>
+                // Passamos 'true' para o isDeletion para o serviço saber que o evento é 2
+                // =============================================================
+                Services.NotificationService.FireEvent(appName, containerName, dataToDelete, 2);
 
-            return Ok("Dado apagado com sucesso.");
+                return Ok("Dado apagado com sucesso.");
+            }
+
+            return NotFound();
         }
     }
 }

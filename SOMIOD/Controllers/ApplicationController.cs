@@ -14,6 +14,32 @@ namespace SOMIOD.App.Controllers
     [RoutePrefix("api/somiod")]
     public class ApplicationController : ApiController
     {
+        // =============================================================
+        // LISTAR TODAS AS APPS (GET api/somiod)
+        // =============================================================
+        [HttpGet]
+        [Route("")] // Rota vazia porque já tem o prefixo "api/somiod"
+        public IHttpActionResult GetAllApplications()
+        {
+            string query = "SELECT * FROM Application";
+
+            // Executa a query usando o teu Helper
+            var dt = SqlDataHelper.ExecuteQuery(query);
+
+            List<Application> apps = new List<Application>();
+            foreach (System.Data.DataRow row in dt.Rows)
+            {
+                apps.Add(new Application
+                {
+                    Id = (int)row["Id"],
+                    Name = (string)row["Name"],
+                    CreationDate = (DateTime)row["CreationDate"],
+                    ResType = "application"
+                });
+            }
+
+            return Ok(apps); // Devolve a lista (200 OK)
+        }
         // POST: api/somiod/
         // Cria uma nova Application
         [HttpPost]

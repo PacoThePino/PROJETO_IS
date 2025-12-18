@@ -1,5 +1,6 @@
 ﻿using SOMIOD.App.Helpers;
 using SOMIOD.Models;
+using SOMIOD.Services;
 using System;
 using System.Collections.Generic;
 using System.Data.SqlClient;
@@ -92,7 +93,7 @@ namespace SOMIOD.Controllers
                 {
                     new SqlParameter("@NewName", container.Name),
                     new SqlParameter("@AppName", appName),
-                    new SqlParameter("@OldName", containerName) 
+                    new SqlParameter("@OldName", containerName)
                 };
 
                 SqlDataHelper.ExecuteNonQuery(queryUpdate, paramsUpdate);
@@ -166,7 +167,7 @@ namespace SOMIOD.Controllers
             if (resType == "content-instance")
             {
                 ContentInstance data = jsonBody.ToObject<ContentInstance>();
-                return SaveContentInstance(data, containerId);
+                return SaveContentInstance(data, containerId, appName, containerName);
             }
             else if (resType == "subscription")
             {
@@ -178,12 +179,13 @@ namespace SOMIOD.Controllers
         }
 
         // Métodos auxiliares privados para organizar o código
-        private IHttpActionResult SaveContentInstance(ContentInstance data, int containerId)
+        private IHttpActionResult SaveContentInstance(ContentInstance data, int containerId, string appName, string containerName)
         {
             if (string.IsNullOrEmpty(data.Name) || string.IsNullOrEmpty(data.Content)) return BadRequest("Nome e Content obrigatórios.");
 
             try
             {
+                data.ParentContainerId = containerId;
                 data.CreationDate = DateTime.Now;
                 string query = "INSERT INTO ContentInstance (Name, CreationDate, Content, ContentType, ParentContainerId) VALUES (@Name, @Date, @Content, @Type, @ParentId)";
                 // ... (Igual ao que tinhas antes, adiciona os parametros) ...
@@ -195,6 +197,15 @@ namespace SOMIOD.Controllers
                     new SqlParameter("@ParentId", containerId)
                 };
                 SqlDataHelper.ExecuteNonQuery(query, paramsInsert);
+
+                // ===============================================
+                // << NOVO: ACIONAR NOTIFICAÇÃO >>
+                // ===============================================
+                NotificationService.FireEvent(appName, containerName, data,1);
+                // Nota: Terás de passar os nomes reais das variáveis aqui!
+                // Para o teste, assume o nome da app e container que estás a usar.
+                // Idealmente, estes nomes deveriam ser passados do método CreateResource 
+
                 return Ok(data);
             }
             catch (SqlException ex) { if (ex.Number == 2627) return Conflict(); return InternalServerError(ex); }
@@ -207,6 +218,7 @@ namespace SOMIOD.Controllers
 
             try
             {
+                sub.ParentContainerId = containerId;
                 sub.CreationDate = DateTime.Now;
                 string query = "INSERT INTO Subscription (Name, CreationDate, Endpoint, Event, ParentContainerId) VALUES (@Name, @Date, @Endpoint, @Event, @ParentId)";
 
