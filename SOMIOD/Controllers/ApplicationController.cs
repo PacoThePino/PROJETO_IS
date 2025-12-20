@@ -20,36 +20,27 @@ namespace SOMIOD.App.Controllers
 
         [HttpGet]
         [Route("")]
-        public IHttpActionResult GetRoot()
+        public IHttpActionResult GetRootDiscovery()
         {
-            // 1. Verificar se o Header de Discovery está presente
             IEnumerable<string> headerValues;
             if (Request.Headers.TryGetValues("somiod-discovery", out headerValues))
             {
                 string resType = headerValues.FirstOrDefault();
+                List<string> paths = new List<string>();
 
-                // Se o utilizador quer descobrir as aplicações
-                if (resType.Equals("application", StringComparison.OrdinalIgnoreCase))
+                // Caso 1: Listar apenas as Apps (Pai)
+                if (resType == "application")
                 {
-                    List<string> paths = new List<string>();
-
-                    // Query para buscar apenas os nomes de todas as apps
-                    string query = "SELECT Name FROM Application";
-                    var dt = SqlDataHelper.ExecuteQuery(query);
-
+                    var dt = SqlDataHelper.ExecuteQuery("SELECT Name FROM Application");
                     foreach (System.Data.DataRow row in dt.Rows)
                     {
-                        // Adiciona o caminho relativo conforme o exemplo do enunciado
                         paths.Add($"/api/somiod/{row["Name"]}");
                     }
-
-                    return Ok(paths); // Devolve ["/api/somiod/App1", "/api/somiod/App2"]
                 }
-
-                // Se o utilizador quiser descobrir TODAS as instâncias do sistema (Recursivo)
-                if (resType.Equals("content-instance", StringComparison.OrdinalIgnoreCase))
+                // Caso 2: Listar até aos Bisnetos (Content Instances)
+                else if (resType == "content-instance")
                 {
-                    List<string> paths = new List<string>();
+                    // JOIN entre as 3 tabelas para montar o caminho completo
                     string query = @"
                 SELECT a.Name as AppName, c.Name as ContName, ci.Name as InstName 
                 FROM ContentInstance ci
@@ -59,16 +50,81 @@ namespace SOMIOD.App.Controllers
                     var dt = SqlDataHelper.ExecuteQuery(query);
                     foreach (System.Data.DataRow row in dt.Rows)
                     {
+                        // Formato: /api/somiod/Pai/Filho/Neto (Instância)
                         paths.Add($"/api/somiod/{row["AppName"]}/{row["ContName"]}/{row["InstName"]}");
                     }
-                    return Ok(paths);
+                }
+                // Caso 3: Listar as Subscrições (Bisneto alternativo)
+                else if (resType == "subscription")
+                {
+                    string query = @"
+                SELECT a.Name as AppName, c.Name as ContName, s.Name as SubName 
+                FROM Subscription s
+                JOIN Container c ON s.ParentContainerId = c.Id
+                JOIN Application a ON c.ParentAppId = a.Id";
+
+                    var dt = SqlDataHelper.ExecuteQuery(query);
+                    foreach (System.Data.DataRow row in dt.Rows)
+                    {
+                        paths.Add($"/api/somiod/{row["AppName"]}/{row["ContName"]}/{row["SubName"]}");
+                    }
+                }
+
+                return Ok(paths);
+            }
+
+            return BadRequest("Header 'somiod-discovery' em falta.");
+        }
+
+        [HttpGet]
+        [Route("{name}")]
+        public IHttpActionResult GetApplicationDiscovery(string appName)
+        {
+            // 1. Verificar primeiro se é um Discovery
+            IEnumerable<string> headerValues;
+            if (Request.Headers.TryGetValues("somiod-discovery", out headerValues))
+            {
+                string resType = headerValues.FirstOrDefault();
+
+                if (resType.Equals("container", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Query para buscar os caminhos dos containers filhos
+                    string query = @"
+                SELECT c.Name 
+                FROM Container c
+                JOIN Application a ON c.ParentAppId = a.Id
+                WHERE a.Name = @AppName";
+
+                    var dt = SqlDataHelper.ExecuteQuery(query, new List<SqlParameter> {
+                new SqlParameter("@AppName", appName)
+            });
+
+                    List<string> paths = new List<string>();
+                    foreach (System.Data.DataRow row in dt.Rows)
+                    {
+                        paths.Add($"/api/somiod/{appName}/{row["Name"]}");
+                    }
+                    return Ok(paths); // Devolve a lista de caminhos
                 }
             }
 
-            // 2. Se não houver Header, o enunciado diz que o "Get All" não deve ser suportado.
-            // Podes devolver um erro 400 ou uma informação básica da tua API.
-            return BadRequest("Para listar recursos, use o Header 'somiod-discovery' com os valores: application ou content-instance.");
-        }
+            // 2. Se NÃO for discovery, devolve os detalhes da App (Comportamento Normal)
+            string queryApp = "SELECT * FROM Application WHERE Name = @Name";
+            var dtApp = SqlDataHelper.ExecuteQuery(queryApp, new List<SqlParameter> { new SqlParameter("@Name", appName) });
+
+            if (dtApp.Rows.Count == 0) return NotFound();
+
+            // Nota: Usar o nome completo do Model para evitar ambiguidade
+            SOMIOD.Models.Application app = new SOMIOD.Models.Application
+            {
+                Id = (int)dtApp.Rows[0]["Id"],
+                Name = (string)dtApp.Rows[0]["Name"],
+                CreationDate = (DateTime)dtApp.Rows[0]["CreationDate"]
+            };
+
+            return Ok(app);
+        } 
+
         // POST: api/somiod/
         // Cria uma nova Application
         [HttpPost]
@@ -115,41 +171,6 @@ namespace SOMIOD.App.Controllers
 
 
 
-        // ==========================================
-        // LEITURA (GET): api/somiod/{name}
-        // Devolve os detalhes de uma aplicação
-        // ==========================================
-
-        [HttpGet]
-        [Route("{name}")]
-        public IHttpActionResult GetApplication(string name)
-        {
-            // 1. Verificar se o Header "somiod-discovery" existe
-            IEnumerable<string> headerValues;
-            bool isDiscovery = Request.Headers.TryGetValues("somiod-discovery", out headerValues);
-
-            // Buscar a App na BD para ter o ID
-            string query = "SELECT * FROM Application WHERE Name = @Name";
-            var dt = SqlDataHelper.ExecuteQuery(query, new List<SqlParameter> { new SqlParameter("@Name", name) });
-
-            if (dt.Rows.Count == 0) return NotFound();
-            int appId = (int)dt.Rows[0]["Id"];      
-
-            if (isDiscovery)
-            {
-                string resType = headerValues.FirstOrDefault();
-                return Ok(PerformDiscoveryLogic(appId, name, resType));
-            }
-
-            // Se NÃO for discovery, devolve o objeto normal (GET tradicional)
-            var app = new Application
-            {
-                Id = appId,
-                Name = (string)dt.Rows[0]["Name"],
-                CreationDate = (DateTime)dt.Rows[0]["CreationDate"]
-            };
-            return Ok(app);
-        }
 
         // Método auxiliar para gerar a lista de caminhos (Paths)
         private List<string> PerformDiscoveryLogic(int parentId, string parentName, string resType)
